@@ -9,7 +9,7 @@
 // Sumatera   : Laumonier et al. 2010
 // Papua      : Asner et al. 2014
 // Lainnya    : IPCC default tropical forest
-// ⚠️  Key = exact shapeName dari WM/geoLab/geoBoundaries/600/ADM1
+// Key = exact shapeName dari WM/geoLab/geoBoundaries/600/ADM1
 var AGB_LOOKUP = {
   // ── Kalimantan ──────────────────────────────
   'Central Kalimantan':             {primary: 357, secondary: 134},
@@ -87,7 +87,7 @@ var panel = ui.Panel({
 });
 ui.root.insert(0, panel);
 
-panel.add(ui.Label('🌿 GHG Deforestation Estimator', {
+panel.add(ui.Label('GHG Deforestation Estimator', {
   fontWeight: 'bold', fontSize: '15px', margin: '0 0 2px 0'
 }));
 panel.add(ui.Label('Indonesia · Hansen 2025 v1.13', {
@@ -98,20 +98,19 @@ panel.add(ui.Label('Indonesia · Hansen 2025 v1.13', {
 panel.add(ui.Label('Provinsi:', {fontWeight: 'bold'}));
 var provSelect = ui.Select({
   items: Object.keys(AGB_LOOKUP).sort(),
-  placeholder: '— Pilih Provinsi —',
+  placeholder: '— Choose Province —',
   style: {stretch: 'horizontal', margin: '0 0 10px 0'}
 });
 panel.add(provSelect);
 
-// Year sliders — slider GEE sudah tampilkan nilai sendiri, tidak perlu label manual
-panel.add(ui.Label('Tahun Mulai:', {fontWeight: 'bold'}));
+panel.add(ui.Label('Starts\:', {fontWeight: 'bold'}));
 var yearStartSlider = ui.Slider({
   min: 2001, max: 2025, value: 2001, step: 1,
   style: {stretch: 'horizontal', margin: '0 0 8px 0'}
 });
 panel.add(yearStartSlider);
 
-panel.add(ui.Label('Tahun Akhir:', {fontWeight: 'bold'}));
+panel.add(ui.Label('End:', {fontWeight: 'bold'}));
 var yearEndSlider = ui.Slider({
   min: 2001, max: 2025, value: 2025, step: 1,
   style: {stretch: 'horizontal', margin: '0 0 10px 0'}
@@ -120,7 +119,7 @@ panel.add(yearEndSlider);
 
 // Run button — biru
 var runBtn = ui.Button({
-  label: '▶ Hitung Emisi',
+  label: 'Calculate Emissions',
   style: {stretch: 'horizontal', margin: '0 0 4px 0', color: 'white', backgroundColor: '#1565c0'}
 });
 panel.add(runBtn);
@@ -142,7 +141,7 @@ runBtn.onClick(function() {
   var yEnd   = yearEndSlider.getValue();
   if (yStart > yEnd) { statusLabel.setValue('Tahun mulai harus ≤ tahun akhir!'); return; }
 
-  statusLabel.setValue('⏳ Menghitung... (bisa 1–2 menit)');
+  statusLabel.setValue('Calculating...');
   resultsPanel.clear();
   Map.clear();
   Map.setControlVisibility({all: true});
@@ -165,7 +164,7 @@ runBtn.onClick(function() {
   // Masks
   var isLoss    = lossReg.eq(1);
   var isPrimary = primaryReg.eq(1);
-  var isPeat    = peatReg.eq(1).or(peatReg.eq(2)); // dominated + mosaic digabung (IPCC EF sama)
+  var isPeat    = peatReg.eq(1).or(peatReg.eq(2)); 
   var isMineral = isPeat.not();
 
   // Visualisasi
@@ -276,7 +275,7 @@ runBtn.onClick(function() {
   withEmissions.evaluate(function(fc, err) {
     if (err) { statusLabel.setValue('Error: ' + err); return; }
 
-    statusLabel.setValue('Selesai — klik bar chart untuk detail per tahun');
+    statusLabel.setValue('Finish, click bar chart for yearly visualization');
 
     // Lookup client-side by year + hitung total
     var dataByYear  = {};
@@ -324,7 +323,7 @@ runBtn.onClick(function() {
       chartArea: {width: '78%', height: '58%'}
     });
 
-    // Panel detail — muncul saat klik bar
+    // Panel detail
     var detailPanel = ui.Panel({
       style: {margin: '4px 0 0 0', padding: '6px',
               backgroundColor: '#e8f0fe', shown: true}
@@ -344,7 +343,7 @@ runBtn.onClick(function() {
       detailPanel.add(ui.Label('Detail Tahun ' + xValue,
         {fontWeight: 'bold', fontSize: '12px', margin: '0 0 4px 0'}));
 
-      detailPanel.add(ui.Label('── Luasan Loss (ha) ─────────'));
+      detailPanel.add(ui.Label('── Loss (ha) ─────────'));
       detailPanel.add(ui.Label('Primary  on peat    : ' + numberFormat(d.primary_peat_ha)));
       detailPanel.add(ui.Label('Primary  on mineral : ' + numberFormat(d.primary_mineral_ha)));
       detailPanel.add(ui.Label('Secondary on peat   : ' + numberFormat(d.secondary_peat_ha)));
@@ -352,7 +351,7 @@ runBtn.onClick(function() {
       detailPanel.add(ui.Label('Total               : ' +
         numberFormat((d.primary_loss_ha || 0) + (d.secondary_loss_ha || 0))));
 
-      detailPanel.add(ui.Label('── Emisi GHG (tCO₂e) ───────'));
+      detailPanel.add(ui.Label('── GHG Emissions (tCO₂e) ───────'));
       detailPanel.add(ui.Label('CO₂         : ' + numberFormat(d.gross_co2_tco2e)));
       detailPanel.add(ui.Label('CH₄         : ' + numberFormat(d.gross_ch4_tco2e)));
       detailPanel.add(ui.Label('N₂O         : ' + numberFormat(d.gross_n2o_tco2e)));

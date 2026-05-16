@@ -1,0 +1,375 @@
+// =============================================
+// GHG Estimation from Deforestation — Indonesia
+// Filter: Provinsi + Rentang Tahun (A–B)
+// Data: Hansen 2025 v1.13 + UMD Primary Forest + IPCC
+// =============================================
+
+// --- AGB LOOKUP PER PULAU (ton biomassa/ha) ---
+// Kalimantan : Kronseder et al. 2012
+// Sumatera   : Laumonier et al. 2010
+// Papua      : Asner et al. 2014
+// Lainnya    : IPCC default tropical forest
+// ⚠️  Key = exact shapeName dari WM/geoLab/geoBoundaries/600/ADM1
+var AGB_LOOKUP = {
+  // ── Kalimantan ──────────────────────────────
+  'Central Kalimantan':             {primary: 357, secondary: 134},
+  'East Kalimantan':                {primary: 357, secondary: 134},
+  'North Kalimantan':               {primary: 357, secondary: 134},
+  'South Kalimantan':               {primary: 357, secondary: 134},
+  'West Kalimantan':                {primary: 357, secondary: 134},
+  // ── Sumatera ────────────────────────────────
+  'Aceh':                           {primary: 300, secondary: 125},
+  'Bangka-Belitung Islands':        {primary: 300, secondary: 125},
+  'Bengkulu':                       {primary: 300, secondary: 125},
+  'Jambi':                          {primary: 300, secondary: 125},
+  'Lampung':                        {primary: 300, secondary: 125},
+  'North Sumatra':                  {primary: 300, secondary: 125},
+  'Riau':                           {primary: 300, secondary: 125},
+  'Riau Islands':                   {primary: 300, secondary: 125},
+  'South Sumatra':                  {primary: 300, secondary: 125},
+  'West Sumatra':                   {primary: 300, secondary: 125},
+  // ── Papua ───────────────────────────────────
+  'Papua':                          {primary: 400, secondary: 155},
+  'West Papua':                     {primary: 400, secondary: 155},
+  // ── Sulawesi ────────────────────────────────
+  'Central Sulawesi':               {primary: 225, secondary: 110},
+  'Gorontalo':                      {primary: 225, secondary: 110},
+  'North Sulawesi':                 {primary: 225, secondary: 110},
+  'South Sulawesi':                 {primary: 225, secondary: 110},
+  'Southeast Sulawesi':             {primary: 225, secondary: 110},
+  'West Sulawesi':                  {primary: 225, secondary: 110},
+  // ── Jawa ────────────────────────────────────
+  'Banten':                         {primary: 175, secondary: 90},
+  'Central Java':                   {primary: 175, secondary: 90},
+  'East Java':                      {primary: 175, secondary: 90},
+  'Jakarta Special Capital Region': {primary: 175, secondary: 90},
+  'Special Region of Yogyakarta':   {primary: 175, secondary: 90},
+  'West Java':                      {primary: 175, secondary: 90},
+  // ── Bali + Nusa Tenggara ────────────────────
+  'Bali':                           {primary: 175, secondary: 90},
+  'East Nusa Tenggara':             {primary: 175, secondary: 90},
+  'West Nusa Tenggara':             {primary: 175, secondary: 90},
+  // ── Maluku ──────────────────────────────────
+  'Maluku':                         {primary: 225, secondary: 110},
+  'North Maluku':                   {primary: 225, secondary: 110}
+};
+
+// --- LOAD DATASETS (sekali, di luar callback) ---
+var provinces     = ee.FeatureCollection("WM/geoLab/geoBoundaries/600/ADM1")
+                      .filter(ee.Filter.eq('shapeGroup', 'IDN'));
+var hansen        = ee.Image("UMD/hansen/global_forest_change_2025_v1_13");
+var lossYear      = hansen.select('lossyear');
+var lossPixel     = hansen.select('loss');
+var primaryForest = ee.ImageCollection("UMD/GLAD/PRIMARY_HUMID_TROPICAL_FORESTS/v1")
+                      .first().select('Primary_HT_forests');
+var peatland      = ee.Image("projects/sat-io/open-datasets/GLOBAL-PEATLAND-DATABASE")
+                      .select('b1');
+var pixelArea     = ee.Image.pixelArea().divide(10000); // m² → ha
+
+// --- IPCC PARAMETERS ---
+var CF        = 0.47;
+var CO2_RATIO = 3.667;
+var Cf        = 0.45;
+var G_CH4     = 6.8;
+var G_N2O     = 0.21;
+var GWP_CH4   = 25;
+var GWP_N2O   = 298;
+var SOC_PEAT_EMISSION = 55.0;
+var SOC_REF_MINERAL   = 47.4;
+var FLU_MINERAL       = 0.48;
+var SOC_MINERAL_CO2E  = SOC_REF_MINERAL * (1 - FLU_MINERAL) * CO2_RATIO;
+
+// =============================================
+// UI LAYOUT
+// =============================================
+var panel = ui.Panel({
+  style: {width: '340px', padding: '10px', backgroundColor: '#f9f9f9'}
+});
+ui.root.insert(0, panel);
+
+panel.add(ui.Label('🌿 GHG Deforestation Estimator', {
+  fontWeight: 'bold', fontSize: '15px', margin: '0 0 2px 0'
+}));
+panel.add(ui.Label('Indonesia · Hansen 2025 v1.13', {
+  fontSize: '11px', color: '#555', margin: '0 0 10px 0'
+}));
+
+// Province dropdown
+panel.add(ui.Label('Provinsi:', {fontWeight: 'bold'}));
+var provSelect = ui.Select({
+  items: Object.keys(AGB_LOOKUP).sort(),
+  placeholder: '— Pilih Provinsi —',
+  style: {stretch: 'horizontal', margin: '0 0 10px 0'}
+});
+panel.add(provSelect);
+
+// Year sliders — slider GEE sudah tampilkan nilai sendiri, tidak perlu label manual
+panel.add(ui.Label('Tahun Mulai:', {fontWeight: 'bold'}));
+var yearStartSlider = ui.Slider({
+  min: 2001, max: 2025, value: 2001, step: 1,
+  style: {stretch: 'horizontal', margin: '0 0 8px 0'}
+});
+panel.add(yearStartSlider);
+
+panel.add(ui.Label('Tahun Akhir:', {fontWeight: 'bold'}));
+var yearEndSlider = ui.Slider({
+  min: 2001, max: 2025, value: 2025, step: 1,
+  style: {stretch: 'horizontal', margin: '0 0 10px 0'}
+});
+panel.add(yearEndSlider);
+
+// Run button — biru
+var runBtn = ui.Button({
+  label: '▶ Hitung Emisi',
+  style: {stretch: 'horizontal', margin: '0 0 4px 0', color: 'white', backgroundColor: '#1565c0'}
+});
+panel.add(runBtn);
+
+var statusLabel = ui.Label('', {fontSize: '12px', color: '#555'});
+panel.add(statusLabel);
+
+var resultsPanel = ui.Panel({style: {margin: '8px 0 0 0'}});
+panel.add(resultsPanel);
+
+// =============================================
+// MAIN COMPUTATION
+// =============================================
+runBtn.onClick(function() {
+  var provName = provSelect.getValue();
+  if (!provName) { statusLabel.setValue('⚠️ Pilih provinsi dulu!'); return; }
+
+  var yStart = yearStartSlider.getValue();
+  var yEnd   = yearEndSlider.getValue();
+  if (yStart > yEnd) { statusLabel.setValue('⚠️ Tahun mulai harus ≤ tahun akhir!'); return; }
+
+  statusLabel.setValue('⏳ Menghitung... (bisa 1–2 menit)');
+  resultsPanel.clear();
+  Map.clear();
+  Map.setControlVisibility({all: true});
+
+  var agb           = AGB_LOOKUP[provName];
+  var AGB_PRIMARY   = agb.primary;
+  var AGB_SECONDARY = agb.secondary;
+
+  // Geometry
+  var region = provinces.filter(ee.Filter.eq('shapeName', provName));
+  Map.centerObject(region, 7);
+  Map.addLayer(region, {color: '#666'}, provName + ' boundary');
+
+  // Clip
+  var lossYearReg = lossYear.clip(region);
+  var lossReg     = lossPixel.clip(region);
+  var primaryReg  = primaryForest.clip(region);
+  var peatReg     = peatland.clip(region);
+
+  // Masks
+  var isLoss    = lossReg.eq(1);
+  var isPrimary = primaryReg.eq(1);
+  var isPeat    = peatReg.eq(1).or(peatReg.eq(2)); // dominated + mosaic digabung (IPCC EF sama)
+  var isMineral = isPeat.not();
+
+  // Visualisasi
+  Map.addLayer(isLoss.and(isPrimary).selfMask(),      {palette: ['#d32f2f']}, 'Primary Forest Loss');
+  Map.addLayer(isLoss.and(isPrimary.not()).selfMask(), {palette: ['#f57c00']}, 'Secondary Forest Loss');
+  Map.addLayer(isPeat.selfMask(),                     {palette: ['#1565c0']}, 'Peatland');
+
+  // --- 4 BAND AREA IMAGE (Opsi B) ---
+  // 4 kombinasi primary/secondary × peat/mineral → 1 reduceRegion per tahun
+  var areaImage = ee.Image.cat([
+    pixelArea.updateMask(isPrimary.and(isPeat)).rename('prim_peat'),
+    pixelArea.updateMask(isPrimary.and(isMineral)).rename('prim_min'),
+    pixelArea.updateMask(isPrimary.not().and(isPeat)).rename('sec_peat'),
+    pixelArea.updateMask(isPrimary.not().and(isMineral)).rename('sec_min')
+  ]);
+
+  var years = ee.List.sequence(yStart - 2000, yEnd - 2000);
+
+  var resultFC = ee.FeatureCollection(years.map(function(y) {
+    y = ee.Number(y);
+    var yearMask = lossYearReg.eq(y);
+
+    var areas = areaImage.updateMask(yearMask).reduceRegion({
+      reducer:    ee.Reducer.sum(),
+      geometry:   region.geometry(),
+      scale:      30,
+      maxPixels:  1e13,
+      bestEffort: true
+    });
+
+    var primPeat = ee.Number(areas.get('prim_peat'));
+    var primMin  = ee.Number(areas.get('prim_min'));
+    var secPeat  = ee.Number(areas.get('sec_peat'));
+    var secMin   = ee.Number(areas.get('sec_min'));
+
+    return ee.Feature(null, {
+      'year':                 y.add(2000),
+      'primary_loss_ha':      primPeat.add(primMin),
+      'secondary_loss_ha':    secPeat.add(secMin),
+      'peat_area_ha':         primPeat.add(secPeat),
+      'mineral_area_ha':      primMin.add(secMin),
+      'primary_peat_ha':      primPeat,
+      'primary_mineral_ha':   primMin,
+      'secondary_peat_ha':    secPeat,
+      'secondary_mineral_ha': secMin
+    });
+  }));
+
+  // --- KALKULASI EMISI ---
+  var withEmissions = resultFC.map(function(f) {
+    var primaryHa   = ee.Number(f.get('primary_loss_ha'));
+    var secondaryHa = ee.Number(f.get('secondary_loss_ha'));
+    var peatHa      = ee.Number(f.get('peat_area_ha'));
+    var mineralHa   = ee.Number(f.get('mineral_area_ha'));
+
+    var co2Primary   = primaryHa.multiply(AGB_PRIMARY).multiply(CF).multiply(CO2_RATIO);
+    var co2Secondary = secondaryHa.multiply(AGB_SECONDARY).multiply(CF).multiply(CO2_RATIO);
+    var totalCO2     = co2Primary.add(co2Secondary);
+
+    var ch4Primary   = primaryHa.multiply(AGB_PRIMARY).multiply(Cf).multiply(G_CH4).multiply(GWP_CH4).divide(1000);
+    var ch4Secondary = secondaryHa.multiply(AGB_SECONDARY).multiply(Cf).multiply(G_CH4).multiply(GWP_CH4).divide(1000);
+    var totalCH4     = ch4Primary.add(ch4Secondary);
+
+    var n2oPrimary   = primaryHa.multiply(AGB_PRIMARY).multiply(Cf).multiply(G_N2O).multiply(GWP_N2O).divide(1000);
+    var n2oSecondary = secondaryHa.multiply(AGB_SECONDARY).multiply(Cf).multiply(G_N2O).multiply(GWP_N2O).divide(1000);
+    var totalN2O     = n2oPrimary.add(n2oSecondary);
+
+    var totalGross   = totalCO2.add(totalCH4).add(totalN2O);
+    var socPeat      = peatHa.multiply(SOC_PEAT_EMISSION);
+    var socMineral   = mineralHa.multiply(SOC_MINERAL_CO2E);
+    var totalSOC     = socPeat.add(socMineral);
+    var totalWithSOC = totalGross.add(totalSOC);
+
+    return f.set({
+      'gross_co2_tco2e':               totalCO2,
+      'gross_ch4_tco2e':               totalCH4,
+      'gross_n2o_tco2e':               totalN2O,
+      'total_gross_emission_tco2e':    totalGross,
+      'soc_peat_tco2e':                socPeat,
+      'soc_mineral_tco2e':             socMineral,
+      'total_soc_tco2e':               totalSOC,
+      'total_emission_with_soc_tco2e': totalWithSOC
+    });
+  });
+
+  print('Results:', withEmissions);
+
+  // --- EXPORT CSV ---
+  Export.table.toDrive({
+    collection:  withEmissions,
+    description: 'ghg_' + provName.replace(/ /g, '_') + '_' + yStart + '_' + yEnd,
+    fileFormat:  'CSV',
+    selectors: [
+      'year',
+      'primary_loss_ha', 'secondary_loss_ha',
+      'primary_peat_ha', 'primary_mineral_ha',
+      'secondary_peat_ha', 'secondary_mineral_ha',
+      'peat_area_ha', 'mineral_area_ha',
+      'gross_co2_tco2e', 'gross_ch4_tco2e', 'gross_n2o_tco2e',
+      'total_gross_emission_tco2e',
+      'soc_peat_tco2e', 'soc_mineral_tco2e', 'total_soc_tco2e',
+      'total_emission_with_soc_tco2e'
+    ]
+  });
+
+  // --- EVALUATE → RINGKASAN + CHART INTERAKTIF ---
+  // Satu evaluate untuk semua — summary + chart click handler
+  withEmissions.evaluate(function(fc, err) {
+    if (err) { statusLabel.setValue('❌ Error: ' + err); return; }
+
+    statusLabel.setValue('✅ Selesai — klik bar chart untuk detail per tahun');
+
+    // Lookup client-side by year + hitung total
+    var dataByYear  = {};
+    var totalEmisi  = 0, primHaTotal = 0, secHaTotal = 0, peatHaTotal = 0;
+    fc.features.forEach(function(f) {
+      var p = f.properties;
+      dataByYear[p.year] = p;
+      totalEmisi  += p.total_emission_with_soc_tco2e || 0;
+      primHaTotal += p.primary_loss_ha               || 0;
+      secHaTotal  += p.secondary_loss_ha             || 0;
+      peatHaTotal += p.peat_area_ha                  || 0;
+    });
+
+    // Ringkasan periode
+    resultsPanel.add(ui.Label('📊 ' + provName + '  ' + yStart + '–' + yEnd,
+      {fontWeight: 'bold', fontSize: '13px'}));
+    resultsPanel.add(ui.Label('─────────────────────────────'));
+    resultsPanel.add(ui.Label('Primary loss    : ' + numberFormat(primHaTotal) + ' ha'));
+    resultsPanel.add(ui.Label('Secondary loss  : ' + numberFormat(secHaTotal) + ' ha'));
+    resultsPanel.add(ui.Label('Loss on peatland: ' + numberFormat(peatHaTotal) + ' ha'));
+    resultsPanel.add(ui.Label('Total loss      : ' + numberFormat(primHaTotal + secHaTotal) + ' ha'));
+    resultsPanel.add(ui.Label('─────────────────────────────'));
+    resultsPanel.add(ui.Label('Total Emisi: ' + numberFormat(totalEmisi / 1e6) + ' Juta tCO₂e',
+      {fontWeight: 'bold', fontSize: '13px'}));
+    resultsPanel.add(ui.Label('CO₂ + CH₄ + N₂O + SOC (peat & mineral)',
+      {fontSize: '10px', color: '#777'}));
+    resultsPanel.add(ui.Label('AGB: ' + AGB_PRIMARY + ' / ' + AGB_SECONDARY + ' t/ha (primary/secondary)',
+      {fontSize: '10px', color: '#777'}));
+    resultsPanel.add(ui.Label('─────────────────────────────'));
+
+    // Histogram — total GHG per tahun
+    var chart = ui.Chart.feature.byFeature({
+      features:    withEmissions,
+      xProperty:   'year',
+      yProperties: ['total_emission_with_soc_tco2e']
+    })
+    .setChartType('ColumnChart')
+    .setOptions({
+      title:  'Total Emisi GHG per Tahun',
+      hAxis:  {title: 'Tahun', format: '####', gridlines: {count: 0}},
+      vAxis:  {title: 'tCO₂e', format: 'short'},
+      colors: ['#1565c0'],
+      legend: {position: 'none'},
+      bar:    {groupWidth: '80%'},
+      chartArea: {width: '78%', height: '58%'}
+    });
+
+    // Panel detail — muncul saat klik bar
+    var detailPanel = ui.Panel({
+      style: {margin: '4px 0 0 0', padding: '6px',
+              backgroundColor: '#e8f0fe', shown: true}
+    });
+    detailPanel.add(ui.Label('👆 Klik bar di atas untuk detail tahun',
+      {fontSize: '11px', color: '#555'}));
+
+    chart.onClick(function(xValue) {
+      detailPanel.clear();
+      if (!xValue || !dataByYear[xValue]) {
+        detailPanel.add(ui.Label('👆 Klik bar di atas untuk detail tahun',
+          {fontSize: '11px', color: '#555'}));
+        return;
+      }
+      var d = dataByYear[xValue];
+
+      detailPanel.add(ui.Label('📋 Detail Tahun ' + xValue,
+        {fontWeight: 'bold', fontSize: '12px', margin: '0 0 4px 0'}));
+
+      detailPanel.add(ui.Label('── Luasan Loss (ha) ─────────'));
+      detailPanel.add(ui.Label('Primary  on peat    : ' + numberFormat(d.primary_peat_ha)));
+      detailPanel.add(ui.Label('Primary  on mineral : ' + numberFormat(d.primary_mineral_ha)));
+      detailPanel.add(ui.Label('Secondary on peat   : ' + numberFormat(d.secondary_peat_ha)));
+      detailPanel.add(ui.Label('Secondary on mineral: ' + numberFormat(d.secondary_mineral_ha)));
+      detailPanel.add(ui.Label('Total               : ' +
+        numberFormat((d.primary_loss_ha || 0) + (d.secondary_loss_ha || 0))));
+
+      detailPanel.add(ui.Label('── Emisi GHG (tCO₂e) ───────'));
+      detailPanel.add(ui.Label('CO₂         : ' + numberFormat(d.gross_co2_tco2e)));
+      detailPanel.add(ui.Label('CH₄         : ' + numberFormat(d.gross_ch4_tco2e)));
+      detailPanel.add(ui.Label('N₂O         : ' + numberFormat(d.gross_n2o_tco2e)));
+      detailPanel.add(ui.Label('SOC peat    : ' + numberFormat(d.soc_peat_tco2e)));
+      detailPanel.add(ui.Label('SOC mineral : ' + numberFormat(d.soc_mineral_tco2e)));
+      detailPanel.add(ui.Label('─────────────────────────────'));
+      detailPanel.add(ui.Label('Total : ' + numberFormat(d.total_emission_with_soc_tco2e) + ' tCO₂e',
+        {fontWeight: 'bold'}));
+    });
+
+    resultsPanel.add(chart);
+    resultsPanel.add(detailPanel);
+  });
+});
+
+// --- Helper: format angka dengan pemisah ribuan ---
+function numberFormat(n) {
+  if (n === null || n === undefined || isNaN(n)) return 'N/A';
+  return n.toFixed(1).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}

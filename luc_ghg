@@ -63,7 +63,7 @@ var lossPixel     = hansen.select('loss');
 var primaryForest = ee.ImageCollection("UMD/GLAD/PRIMARY_HUMID_TROPICAL_FORESTS/v1")
                       .first().select('Primary_HT_forests');
 var peatland      = ee.Image("projects/sat-io/open-datasets/GLOBAL-PEATLAND-DATABASE")
-                      .select('b1');
+                      .select('b1').unmask(0);
 var pixelArea     = ee.Image.pixelArea().divide(10000); // m² → ha
 
 // --- IPCC PARAMETERS ---
@@ -95,7 +95,7 @@ panel.add(ui.Label('Indonesia · Hansen 2025 v1.13', {
 }));
 
 // Province dropdown
-panel.add(ui.Label('Provinsi:', {fontWeight: 'bold'}));
+panel.add(ui.Label('Province:', {fontWeight: 'bold'}));
 var provSelect = ui.Select({
   items: Object.keys(AGB_LOOKUP).sort(),
   placeholder: '— Choose Province —',
@@ -103,7 +103,7 @@ var provSelect = ui.Select({
 });
 panel.add(provSelect);
 
-panel.add(ui.Label('Starts\:', {fontWeight: 'bold'}));
+panel.add(ui.Label('Start\:', {fontWeight: 'bold'}));
 var yearStartSlider = ui.Slider({
   min: 2001, max: 2025, value: 2001, step: 1,
   style: {stretch: 'horizontal', margin: '0 0 8px 0'}
@@ -117,10 +117,10 @@ var yearEndSlider = ui.Slider({
 });
 panel.add(yearEndSlider);
 
-// Run button — biru
+// Run button
 var runBtn = ui.Button({
   label: 'Calculate Emissions',
-  style: {stretch: 'horizontal', margin: '0 0 4px 0', color: 'white', backgroundColor: '#1565c0'}
+  style: {stretch: 'horizontal', margin: '0 0 4px 0', color: 'white', backgroundColor: '#00008B'}
 });
 panel.add(runBtn);
 
@@ -298,7 +298,7 @@ runBtn.onClick(function() {
     resultsPanel.add(ui.Label('Loss on peatland: ' + numberFormat(peatHaTotal) + ' ha'));
     resultsPanel.add(ui.Label('Total loss      : ' + numberFormat(primHaTotal + secHaTotal) + ' ha'));
     resultsPanel.add(ui.Label('─────────────────────────────'));
-    resultsPanel.add(ui.Label('Total Emisi: ' + numberFormat(totalEmisi / 1e6) + ' Juta tCO₂e',
+    resultsPanel.add(ui.Label('Total Emissions: ' + numberFormat(totalEmisi / 1e6) + ' Million tCO₂e',
       {fontWeight: 'bold', fontSize: '13px'}));
     resultsPanel.add(ui.Label('CO₂ + CH₄ + N₂O + SOC (peat & mineral)',
       {fontSize: '10px', color: '#777'}));
@@ -314,8 +314,8 @@ runBtn.onClick(function() {
     })
     .setChartType('ColumnChart')
     .setOptions({
-      title:  'Total Emisi GHG per Tahun',
-      hAxis:  {title: 'Tahun', format: '####', gridlines: {count: 0}},
+      title:  'Yearly GHG Emissions',
+      hAxis:  {title: 'Year', format: '####', gridlines: {count: 0}},
       vAxis:  {title: 'tCO₂e', format: 'short'},
       colors: ['#1565c0'],
       legend: {position: 'none'},
@@ -326,21 +326,21 @@ runBtn.onClick(function() {
     // Panel detail
     var detailPanel = ui.Panel({
       style: {margin: '4px 0 0 0', padding: '6px',
-              backgroundColor: '#e8f0fe', shown: true}
+              shown: true}
     });
-    detailPanel.add(ui.Label('Klik bar di atas untuk detail tahun',
-      {fontSize: '11px', color: '#555'}));
+    detailPanel.add(ui.Label('click bar for more detailed info',
+      {fontSize: '11px'}));
 
     chart.onClick(function(xValue) {
       detailPanel.clear();
       if (!xValue || !dataByYear[xValue]) {
-        detailPanel.add(ui.Label('Klik bar di atas untuk detail tahun',
-          {fontSize: '11px', color: '#555'}));
+        detailPanel.add(ui.Label('click bar for more detailed info',
+          {fontSize: '11px'}));
         return;
       }
       var d = dataByYear[xValue];
 
-      detailPanel.add(ui.Label('Detail Tahun ' + xValue,
+      detailPanel.add(ui.Label('Year ' + xValue,
         {fontWeight: 'bold', fontSize: '12px', margin: '0 0 4px 0'}));
 
       detailPanel.add(ui.Label('── Loss (ha) ─────────'));

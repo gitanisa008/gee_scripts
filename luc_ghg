@@ -1,15 +1,13 @@
 // =============================================
 // GHG Estimation from Deforestation — Indonesia
-// Filter: Provinsi + Rentang Tahun (A–B)
+// Filter: Provinsi + Rentang Tahun 
 // Data: Hansen 2025 v1.13 + UMD Primary Forest + IPCC
 // =============================================
-
-// --- AGB LOOKUP PER PULAU (ton biomassa/ha) ---
 // Kalimantan : Kronseder et al. 2012
 // Sumatera   : Laumonier et al. 2010
 // Papua      : Asner et al. 2014
 // Lainnya    : IPCC default tropical forest
-// Key = exact shapeName dari WM/geoLab/geoBoundaries/600/ADM1
+
 var AGB_LOOKUP = {
   // ── Kalimantan ──────────────────────────────
   'Central Kalimantan':             {primary: 357, secondary: 134},
@@ -135,11 +133,11 @@ panel.add(resultsPanel);
 // =============================================
 runBtn.onClick(function() {
   var provName = provSelect.getValue();
-  if (!provName) { statusLabel.setValue('Pilih provinsi dulu!'); return; }
+  if (!provName) { statusLabel.setValue('Choose province!'); return; }
 
   var yStart = yearStartSlider.getValue();
   var yEnd   = yearEndSlider.getValue();
-  if (yStart > yEnd) { statusLabel.setValue('Tahun mulai harus ≤ tahun akhir!'); return; }
+  if (yStart > yEnd) { statusLabel.setValue('start year ≤ end year!'); return; }
 
   statusLabel.setValue('Calculating...');
   resultsPanel.clear();
@@ -298,8 +296,20 @@ runBtn.onClick(function() {
     resultsPanel.add(ui.Label('Loss on peatland: ' + numberFormat(peatHaTotal) + ' ha'));
     resultsPanel.add(ui.Label('Total loss      : ' + numberFormat(primHaTotal + secHaTotal) + ' ha'));
     resultsPanel.add(ui.Label('─────────────────────────────'));
-    resultsPanel.add(ui.Label('Total Emissions: ' + numberFormat(totalEmisi / 1e6) + ' Million tCO₂e',
+    var emisiLabel, emisiSatuan;
+      if (totalEmisi >= 1e6) {
+        emisiLabel  = numberFormat(totalEmisi / 1e6);
+        emisiSatuan = ' Million tCO₂e';
+      } else if (totalEmisi >= 1e3) {
+        emisiLabel  = numberFormat(totalEmisi / 1e3);
+        emisiSatuan = ' Thousand tCO₂e';
+      } else {
+        emisiLabel  = numberFormat(totalEmisi);
+        emisiSatuan = ' tCO₂e';
+      }
+    resultsPanel.add(ui.Label('Total Emissions: ' + emisiLabel + emisiSatuan,
       {fontWeight: 'bold', fontSize: '13px'}));
+  
     resultsPanel.add(ui.Label('CO₂ + CH₄ + N₂O + SOC (peat & mineral)',
       {fontSize: '10px', color: '#777'}));
     resultsPanel.add(ui.Label('AGB: ' + AGB_PRIMARY + ' / ' + AGB_SECONDARY + ' t/ha (primary/secondary)',

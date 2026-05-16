@@ -120,7 +120,7 @@ panel.add(yearEndSlider);
 // Run button
 var runBtn = ui.Button({
   label: 'Calculate Emissions',
-  style: {stretch: 'horizontal', margin: '0 0 4px 0', color: 'white', backgroundColor: '#00008B'}
+  style: {stretch: 'horizontal', margin: '0 0 4px 0', color: 'black', backgroundColor: '#00008B'}
 });
 panel.add(runBtn);
 

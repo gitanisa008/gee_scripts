@@ -136,11 +136,11 @@ panel.add(resultsPanel);
 // =============================================
 runBtn.onClick(function() {
   var provName = provSelect.getValue();
-  if (!provName) { statusLabel.setValue('⚠️ Pilih provinsi dulu!'); return; }
+  if (!provName) { statusLabel.setValue('Pilih provinsi dulu!'); return; }
 
   var yStart = yearStartSlider.getValue();
   var yEnd   = yearEndSlider.getValue();
-  if (yStart > yEnd) { statusLabel.setValue('⚠️ Tahun mulai harus ≤ tahun akhir!'); return; }
+  if (yStart > yEnd) { statusLabel.setValue('Tahun mulai harus ≤ tahun akhir!'); return; }
 
   statusLabel.setValue('⏳ Menghitung... (bisa 1–2 menit)');
   resultsPanel.clear();
@@ -274,9 +274,9 @@ runBtn.onClick(function() {
   // --- EVALUATE → RINGKASAN + CHART INTERAKTIF ---
   // Satu evaluate untuk semua — summary + chart click handler
   withEmissions.evaluate(function(fc, err) {
-    if (err) { statusLabel.setValue('❌ Error: ' + err); return; }
+    if (err) { statusLabel.setValue('Error: ' + err); return; }
 
-    statusLabel.setValue('✅ Selesai — klik bar chart untuk detail per tahun');
+    statusLabel.setValue('Selesai — klik bar chart untuk detail per tahun');
 
     // Lookup client-side by year + hitung total
     var dataByYear  = {};
@@ -291,7 +291,7 @@ runBtn.onClick(function() {
     });
 
     // Ringkasan periode
-    resultsPanel.add(ui.Label('📊 ' + provName + '  ' + yStart + '–' + yEnd,
+    resultsPanel.add(ui.Label( provName + '  ' + yStart + '–' + yEnd,
       {fontWeight: 'bold', fontSize: '13px'}));
     resultsPanel.add(ui.Label('─────────────────────────────'));
     resultsPanel.add(ui.Label('Primary loss    : ' + numberFormat(primHaTotal) + ' ha'));
@@ -329,19 +329,19 @@ runBtn.onClick(function() {
       style: {margin: '4px 0 0 0', padding: '6px',
               backgroundColor: '#e8f0fe', shown: true}
     });
-    detailPanel.add(ui.Label('👆 Klik bar di atas untuk detail tahun',
+    detailPanel.add(ui.Label('Klik bar di atas untuk detail tahun',
       {fontSize: '11px', color: '#555'}));
 
     chart.onClick(function(xValue) {
       detailPanel.clear();
       if (!xValue || !dataByYear[xValue]) {
-        detailPanel.add(ui.Label('👆 Klik bar di atas untuk detail tahun',
+        detailPanel.add(ui.Label('Klik bar di atas untuk detail tahun',
           {fontSize: '11px', color: '#555'}));
         return;
       }
       var d = dataByYear[xValue];
 
-      detailPanel.add(ui.Label('📋 Detail Tahun ' + xValue,
+      detailPanel.add(ui.Label('Detail Tahun ' + xValue,
         {fontWeight: 'bold', fontSize: '12px', margin: '0 0 4px 0'}));
 
       detailPanel.add(ui.Label('── Luasan Loss (ha) ─────────'));

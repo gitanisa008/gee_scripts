@@ -147,7 +147,7 @@ var header = ui.Panel({
       fontWeight: 'bold', fontSize: '17px', color: 'black', margin: '4px 0 2px 0'
     }),
     ui.Label('Radar (Sentinel-1 · RADD) + Optical (GFW · SBTN · JRC) | Baseline: Dec 31, 2020', {
-      fontSize: '10px', color: '#90a4ae', margin: '0 0 4px 0'
+      fontSize: '10px', color: '#546e7a', margin: '0 0 4px 0'
     })
   ],
   style: {
@@ -164,7 +164,7 @@ var sidebar = ui.Panel({
   style: {
     position: 'top-left',
     padding: '0',
-    backgroundColor: '#fafafa',
+    backgroundColor: 'white',
     border: '1px solid #ccc',
     width: '330px'
   }
@@ -205,7 +205,7 @@ var statusLabel = ui.Label('Ready — paste or load sample data.', {
 });
 statusPanel.add(statusLabel);
 
-uploadSection.add(ui.Label('Plot GeoJSON:', { fontSize: '11px', fontWeight: 'bold', color: '#37474f', margin: '0 0 6px 0' }));
+uploadSection.add(ui.Label('Plot GeoJSON:', { fontSize: '11px', fontWeight: 'bold', color: 'black', margin: '0 0 6px 0' }));
 uploadSection.add(geojsonTextbox);
 uploadSection.add(btnRow);
 uploadSection.add(statusPanel);
@@ -216,7 +216,7 @@ var divider = function() {
 };
 
 // --- RADD Filter Section ---
-var raddSection = ui.Panel({ style: { padding: '12px', backgroundColor: '#fff8e1' } });
+var raddSection = ui.Panel({ style: { padding: '12px', backgroundColor: 'white' } });
 
 var confSelect = ui.Select({
   items: ['All alerts (Low + High confidence)', 'High confidence only'],
@@ -225,21 +225,21 @@ var confSelect = ui.Select({
 });
 
 raddSection.add(ui.Label('RADD Radar Alert Settings', {
-  fontWeight: 'bold', fontSize: '12px', color: '#e65100', margin: '0 0 4px 0'
+  fontWeight: 'bold', fontSize: '12px', color: 'black', margin: '0 0 4px 0'
 }));
 raddSection.add(ui.Label('Sentinel-1 SAR · Cloud-penetrating · Near real-time', {
-  fontSize: '10px', color: '#78909c', fontStyle: 'italic', margin: '0 0 8px 0'
+  fontSize: '10px', color: '#546e7a', fontStyle: 'italic', margin: '0 0 8px 0'
 }));
 raddSection.add(ui.Label('Minimum confidence to display:', {
-  fontSize: '11px', color: '#546e7a', margin: '0'
+  fontSize: '11px', color: 'black', margin: '0'
 }));
 raddSection.add(confSelect);
 raddSection.add(ui.Label('Note: Toggle RADD layers (7–10) in layer panel above.', {
-  fontSize: '10px', color: '#90a4ae', margin: '8px 0 0 0', fontStyle: 'italic'
+  fontSize: '10px', color: '#546e7a', margin: '8px 0 0 0', fontStyle: 'italic'
 }));
 
 // Assemble sidebar
-sidebar.add(makeSecHeader('lot Upload'));
+sidebar.add(makeSecHeader('Plot Upload'));
 sidebar.add(uploadSection);
 sidebar.add(divider());
 sidebar.add(makeSecHeader('RADD Configuration', '#4e342e'));
@@ -278,34 +278,34 @@ popupPanel.add(popupBody);
 popupPanel.add(popupClose);
 Map.add(popupPanel);
 
-// --- Legend (bottom-left) ---
+// --- Legend (bottom-RIGHT) — dipindah agar tidak tumpuk sama sidebar kiri ---
 var legend = ui.Panel({
   style: {
-    position: 'bottom-left',
+    position: 'bottom-right',
     padding: '0',
     backgroundColor: 'white',
     border: '1px solid #ccc',
-    width: '210px'
+    width: '220px'
   }
 });
 
 legend.add(makeSecHeader('Layer Legend'));
 
-var legendBody = ui.Panel({ style: { padding: '8px 10px' } });
+var legendBody = ui.Panel({ style: { padding: '8px 10px', backgroundColor: 'white' } });
 
 var makeRow = function(color, label) {
   return ui.Panel({
     widgets: [
       ui.Label('■', { color: color, margin: '0 6px 0 0', fontSize: '15px' }),
-      ui.Label(label, { fontSize: '10px', color: '#333', margin: '2px 0 0 0' })
+      ui.Label(label, { fontSize: '10px', color: 'black', margin: '2px 0 0 0' })
     ],
     layout: ui.Panel.Layout.flow('horizontal'),
-    style: { margin: '2px 0' }
+    style: { margin: '2px 0', backgroundColor: 'white' }
   });
 };
 
 var sectionLabel = function(txt) {
-  return ui.Label(txt, { fontSize: '9px', fontWeight: 'bold', color: '#78909c', margin: '6px 0 3px 0' });
+  return ui.Label(txt, { fontSize: '9px', fontWeight: 'bold', color: 'black', margin: '6px 0 3px 0' });
 };
 
 legendBody.add(sectionLabel('FOREST BASELINE 2020'));
@@ -336,7 +336,7 @@ var uploadedPolygonsLayer = null;
 var uploadedPointsLayer   = null;
 var uploadedFeatures      = [];
 
-var sampleGeoJSON = '{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"ProducerName":"Sample Producer","ProducerCountry":"ID","ProductionPlace":"PLOT-001","Area":0.81},"geometry":{"type":"Polygon","coordinates":[[[96.948763,4.751786],[96.948537,4.751189],[96.947678,4.751273],[96.947641,4.751804],[96.947963,4.752041],[96.948326,4.751705],[96.948535,4.75194],[96.948745,4.751801],[96.948763,4.751786]]]}},{"type":"Feature","properties":{"ProducerName":"Sample Producer","ProducerCountry":"ID","ProductionPlace":"PLOT-002","Area":0.25},"geometry":{"type":"Polygon","coordinates":[[[97.017496,4.757687],[97.017516,4.75746],[97.016769,4.757434],[97.016847,4.757779],[97.017496,4.757687]]]}},{"type":"Feature","properties":{"ProducerName":"Sample Producer","ProducerCountry":"ID","ProductionPlace":"PLOT-003","Area":0.37},"geometry":{"type":"Polygon","coordinates":[[[96.940555,4.764427],[96.940154,4.76368],[96.939977,4.764437],[96.940196,4.764706],[96.940555,4.764427]]]}},{"type":"Feature","properties":{"ProducerName":"Sample Producer","ProducerCountry":"ID","ProductionPlace":"PLOT-004","Area":0.83},"geometry":{"type":"Polygon","coordinates":[[[97.032685,4.779585],[97.032686,4.779589],[97.03189,4.779669],[97.032346,4.780503],[97.03308,4.780413],[97.032685,4.779585]]]}}}]}';
+var sampleGeoJSON = '{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"ProducerName":"Sample Producer","ProducerCountry":"ID","ProductionPlace":"PLOT-001","Area":0.81},"geometry":{"type":"Polygon","coordinates":[[[110.4,-7.8],[110.5,-7.8],[110.5,-7.9],[110.4,-7.9],[110.4,-7.8]]]}}]}';
 
 var updateStatus = function(msg, color) {
   statusPanel.clear();

@@ -171,12 +171,12 @@ var sidebar = ui.Panel({
 });
 
 // Sidebar: section header
-var makeSecHeader = function(label, bgColor) {
-  return ui.Panel({
-    widgets: [ui.Label(label, { fontWeight: 'bold', fontSize: '12px', color: 'white', margin: '0' })],
-    style: { backgroundColor: bgColor || '#2e4057', padding: '8px 12px' }
-  });
-};
+// var makeSecHeader = function(label, bgColor) {
+//   return ui.Panel({
+//     widgets: [ui.Label(label, { fontWeight: 'bold', fontSize: '12px', color: 'white', margin: '0' })],
+//     // style: { backgroundColor: bgColor || 'white', padding: '8px 12px' }
+//   });
+// };
 
 // --- Upload Section ---
 var uploadSection = ui.Panel({ style: { padding: '12px', backgroundColor: 'white' } });
@@ -191,9 +191,9 @@ var btnRow = ui.Panel({
   style: { margin: '8px 0 0 0' }
 });
 
-var uploadBtn = ui.Button({ label: 'Load',   style: { backgroundColor: '#2e7d32', color: 'white', fontSize: '11px', margin: '0 4px 0 0' } });
-var sampleBtn = ui.Button({ label: 'Sample', style: { backgroundColor: '#1565c0', color: 'white', fontSize: '11px', margin: '0 4px 0 0' } });
-var clearBtn  = ui.Button({ label: 'Clear',  style: { backgroundColor: '#b71c1c', color: 'white', fontSize: '11px' } });
+var uploadBtn = ui.Button({ label: 'Load',   style: { backgroundColor: '#2e7d32', color: 'black', fontSize: '11px', margin: '0 4px 0 0' } });
+var sampleBtn = ui.Button({ label: 'Sample', style: { backgroundColor: '#1565c0', color: 'black', fontSize: '11px', margin: '0 4px 0 0' } });
+var clearBtn  = ui.Button({ label: 'Clear',  style: { backgroundColor: '#b71c1c', color: 'black', fontSize: '11px', margin: '0 4px 0 0' } });
 
 btnRow.add(uploadBtn); btnRow.add(sampleBtn); btnRow.add(clearBtn);
 
@@ -239,10 +239,8 @@ raddSection.add(ui.Label('Note: Toggle RADD layers (7–10) in layer panel above
 }));
 
 // Assemble sidebar
-sidebar.add(makeSecHeader('Plot Upload'));
 sidebar.add(uploadSection);
 sidebar.add(divider());
-sidebar.add(makeSecHeader('RADD Configuration', '#4e342e'));
 sidebar.add(raddSection);
 Map.add(sidebar);
 
@@ -288,8 +286,6 @@ var legend = ui.Panel({
     width: '220px'
   }
 });
-
-legend.add(makeSecHeader('Layer Legend'));
 
 var legendBody = ui.Panel({ style: { padding: '8px 10px', backgroundColor: 'white' } });
 

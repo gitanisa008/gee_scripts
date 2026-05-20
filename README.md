@@ -2,6 +2,12 @@
 
 A collection of Google Earth Engine (GEE) scripts for various research projects
 
+## Apps
+
+| Script | App Link |
+|--------|----------|
+| luc_ghg | *(https://gitanisa.users.earthengine.app/view/greenhouse-gasses-emission-from-land-use-change)* |
+
 ## Scripts
 
 ### luc_ghg
@@ -101,11 +107,6 @@ All values are reported in tonnes of CO2-equivalent (tCO2e) and aggregated per y
 - AGB values: Kronseder et al. (2012) for Kalimantan, Laumonier et al. (2010) for Sumatra, Asner et al. (2014) for Papua, IPCC defaults for other regions
 - Emission factors: IPCC Guidelines for National Greenhouse Gas Inventories
 
-## Apps
-
-| Script | App Link |
-|--------|----------|
-| luc_ghg | *(https://gitanisa.users.earthengine.app/view/greenhouse-gasses-emission-from-land-use-change)* |
 
 ## Notes
 - All scripts are intended to be run in the [GEE Code Editor](https://code.earthengine.google.com/).

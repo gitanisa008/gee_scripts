@@ -1,0 +1,429 @@
+// ============================================================
+// MULTI-SENSOR DEFORESTATION MONITORING TOOL
+// Portfolio Version | Optical + Radar Fusion Approach
+// Reference baseline: December 31, 2020 (aligned with EUDR)
+// Sensors: Hansen GFC, GLAD, JRC TMF + RADD (Sentinel-1 SAR)
+// ============================================================
+
+// ============================================================
+// SECTION 1: DATASET INITIALIZATION
+// ============================================================
+var idn = ee.FeatureCollection("FAO/GAUL/2015/level1")
+  .filter(ee.Filter.eq('ADM0_NAME', 'Indonesia'));
+  
+// --- JRC Global Forest Cover 2020 ---
+var jrc      = ee.Image("JRC/GFC2020/V3");
+var forest_jrc = jrc.gt(0).clip(idn)
+
+// --- JRC  Deforestation 2021-2025 ---
+var tmf = ee.ImageCollection("projects/JRC/TMF/v1_2025/DeforestationYear").mosaic();
+var loss_jrc = tmf.gte(2021).and(tmf.lte(2025))
+              .clip(idn)
+
+// --- GLAD Optical Alerts 2025 (Landsat/Sentinel-2) ---
+var glad = ee.ImageCollection('projects/glad/alert/UpdResult')
+  .map(function(img) { return img.select(['conf25', 'alertDate25']); });
+var glad_latest      = glad.mosaic();
+var glad_alerts = glad_latest.select('conf25').gt(0)
+  .and(glad_latest.select('alertDate25').gt(0));
+
+// --- RADD Alerts (Sentinel-1 SAR | Wageningen University) ---
+var radd_col = ee.ImageCollection('projects/radar-wur/raddalert/v1')
+  .filter(ee.Filter.listContains('system:band_names', 'Alert'))
+  .filter(ee.Filter.listContains('system:band_names', 'Date'));
+var radd_img  = radd_col.select(['Alert', 'Date']).mosaic();
+var radd_conf = radd_img.select('Alert');
+var radd_date = radd_img.select('Date');
+
+// Filter: post-2020 cutoff (day > 731)
+var radd_post2020  = radd_date.gt(731);
+var radd_all_conf  = radd_post2020.and(radd_conf.gte(2));
+var radd_high_conf = radd_post2020.and(radd_conf.gte(3));
+
+// ============================================================
+// SECTION 2: LOGIC FOR MULTI SENSORS ALERT
+// ============================================================
+
+// RADD x forest masks
+var radd_jrc  = radd_all_conf.multiply(loss_jrc).unmask(0).rename('radd_jrc');
+var radd_glad = radd_all_conf.multiply(glad_alerts).unmask(0).rename('radd_glad');
+var radd_jrc_high  = radd_high_conf.multiply(loss_jrc).unmask(0).rename('radd_jrc_high');
+var radd_glad_high = radd_high_conf.multiply(glad_alerts).unmask(0).rename('radd_glad_high');
+
+// ============================================================
+// SECTION 3: VISUALIZATION PARAMETERS
+// ============================================================
+
+var VIS = {
+  forest_jrc:    { min: 1, max: 1, palette: ['#66bd63'] },
+  glad_all:     { min: 1, max: 1, palette: ['#8B0000'] },
+  loss_jrc:      { min: 1, max: 1, palette: ['#f46d43'] },
+  radd_all:      { min: 1, max: 1, palette: ['#fdae61'] },
+  radd_high:     { min: 1, max: 1, palette: ['#f46d43'] },
+};
+
+// ============================================================
+// SECTION 4: ADD LAYERS TO MAP
+// ============================================================
+Map.addLayer(forest_jrc.updateMask(forest_jrc),              VIS.forest_jrc,  'JRC Forest 2020',           true);
+Map.addLayer(loss_jrc.updateMask(loss_jrc.gt(0)), VIS.loss_jrc, 'JRC Deforestation 2021-2025',    true);
+Map.addLayer(glad_alerts.updateMask(glad_alerts.gt(0)), VIS.glad_all, 'GLAD ALERT 2025 ONLY',    true);
+Map.addLayer(radd_jrc.updateMask(radd_jrc.gt(0)),   VIS.radd_all,  'RADD x JRC LOSS (All confidence)',   false);
+Map.addLayer(radd_glad.updateMask(radd_glad.gt(0)),     VIS.radd_all,  'RADD x GLAD ALERT 2025 (All confidence)',    false);
+Map.addLayer(radd_jrc_high.updateMask(radd_jrc_high.gt(0)),   VIS.radd_all,  'RADD x JRC LOSS (High confidence)',   false);
+Map.addLayer(radd_glad_high.updateMask(radd_glad_high.gt(0)),     VIS.radd_all,  'ADD x GLAD ALERT 2025 (High confidence)',    false);
+
+// ============================================================
+// SECTION 5: UI
+// ============================================================
+
+var header = ui.Panel({
+  widgets: [
+    ui.Label('Multi-Sensor Deforestation Monitor', {
+      fontWeight: 'bold', fontSize: '17px', color: 'black', margin: '4px 0 2px 0'
+    }),
+    ui.Label('Radar (Sentinel-1 . RADD) + Optical (RC) + GLAD - S | Baseline: Dec 31, 2020', {
+      fontSize: '10px', color: '#546e7a', margin: '0 0 4px 0'
+    })
+  ],
+  style: {
+    position: 'top-center',
+    padding: '8px 24px',
+    backgroundColor: 'white',
+    border: '1px solid #263238'
+  }
+});
+Map.add(header);
+
+var sidebar = ui.Panel({
+  style: {
+    position: 'top-left',
+    padding: '0',
+    backgroundColor: 'white',
+    border: '1px solid #ccc',
+    width: '330px'
+  }
+});
+
+// --- Upload Section ---
+var uploadSection = ui.Panel({ style: { padding: '12px', backgroundColor: 'white' } });
+
+var geojsonTextbox = ui.Textbox({
+  placeholder: 'Paste GeoJSON FeatureCollection here...',
+  style: { width: '100%', height: '90px', fontSize: '11px' }
+});
+
+var btnRow = ui.Panel({
+  layout: ui.Panel.Layout.flow('horizontal'),
+  style: { margin: '8px 0 0 0' }
+});
+
+var uploadBtn = ui.Button({ label: 'Load',   style: { backgroundColor: '#2e7d32', color: 'black', fontSize: '11px', margin: '0 4px 0 0' } });
+var sampleBtn = ui.Button({ label: 'Sample', style: { backgroundColor: '#1565c0', color: 'black', fontSize: '11px', margin: '0 4px 0 0' } });
+var clearBtn  = ui.Button({ label: 'Clear',  style: { backgroundColor: '#b71c1c', color: 'black', fontSize: '11px', margin: '0 4px 0 0' } });
+
+btnRow.add(uploadBtn); btnRow.add(sampleBtn); btnRow.add(clearBtn);
+
+var statusPanel = ui.Panel({
+  style: { margin: '10px 0 0 0', padding: '7px 8px', backgroundColor: '#f5f5f5', border: '1px solid #e0e0e0' }
+});
+statusPanel.add(ui.Label('Ready - paste or load sample data.', {
+  fontSize: '10px', color: '#546e7a', margin: '0'
+}));
+
+uploadSection.add(ui.Label('Plot GeoJSON:', { fontSize: '11px', fontWeight: 'bold', color: 'black', margin: '0 0 6px 0' }));
+uploadSection.add(geojsonTextbox);
+uploadSection.add(btnRow);
+uploadSection.add(statusPanel);
+
+var divider = function() {
+  return ui.Panel({ style: { height: '1px', backgroundColor: '#e0e0e0', margin: '0' } });
+};
+
+// --- RADD Filter Section ---
+var raddSection = ui.Panel({ style: { padding: '12px', backgroundColor: 'white' } });
+
+var confSelect = ui.Select({
+  items: ['All alerts (Low + High confidence)', 'High confidence only'],
+  value: 'High confidence only',
+  style: { width: '100%', fontSize: '11px', margin: '6px 0 0 0' }
+});
+
+raddSection.add(ui.Label('RADD Radar Alert Settings', {
+  fontWeight: 'bold', fontSize: '12px', color: 'black', margin: '0 0 4px 0'
+}));
+raddSection.add(ui.Label('Sentinel-1 SAR - Cloud-penetrating - Near real-time', {
+  fontSize: '10px', color: '#546e7a', fontStyle: 'italic', margin: '0 0 8px 0'
+}));
+raddSection.add(ui.Label('Minimum confidence:', {
+  fontSize: '11px', color: 'black', margin: '0'
+}));
+raddSection.add(confSelect);
+
+// Assemble sidebar
+sidebar.add(uploadSection);
+sidebar.add(divider());
+sidebar.add(raddSection);
+sidebar.add(divider());
+Map.add(sidebar);
+
+// --- Popup (top-right) ---
+var popupPanel = ui.Panel({
+  style: {
+    position: 'top-right',
+    padding: '0',
+    backgroundColor: 'white',
+    border: '2px solid',
+    width: '260px',
+    shown: false
+  }
+});
+
+var popupHead = ui.Panel({
+  style: { backgroundColor: 'white', padding: '8px 12px' }
+});
+popupHead.add(ui.Label('Plot Information', {
+  fontWeight: 'bold', fontSize: '12px', color: 'black', margin: '0'
+}));
+
+var popupBody = ui.Panel({ style: { padding: '10px 12px' } });
+
+var popupClose = ui.Button({
+  label: 'Close',
+  style: { backgroundColor: 'black', color: 'black', fontSize: '10px', margin: '4px 12px 8px 12px' },
+  onClick: function() { popupPanel.style().set('shown', false); }
+});
+
+popupPanel.add(popupHead);
+popupPanel.add(popupBody);
+popupPanel.add(popupClose);
+Map.add(popupPanel);
+
+// --- Legend (bottom-right) ---
+var legend = ui.Panel({
+  style: {
+    position: 'bottom-right',
+    padding: '0',
+    backgroundColor: 'white',
+    border: '1px solid #ccc',
+    width: '220px'
+  }
+});
+
+var legendBody = ui.Panel({ style: { padding: '8px 10px', backgroundColor: 'white' } });
+
+var makeRow = function(color, label) {
+  return ui.Panel({
+    widgets: [
+      ui.Label('|', { color: color, margin: '0 6px 0 0', fontSize: '15px', fontWeight: 'bold' }),
+      ui.Label(label, { fontSize: '10px', color: 'black', margin: '2px 0 0 0' })
+    ],
+    layout: ui.Panel.Layout.flow('horizontal'),
+    style: { margin: '2px 0', backgroundColor: 'white' }
+  });
+};
+
+var sectionLabel = function(txt) {
+  return ui.Label(txt, { fontSize: '9px', fontWeight: 'bold', color: 'black', margin: '6px 0 3px 0' });
+};
+
+legendBody.add(sectionLabel('FOREST BASELINE 2020'));
+legendBody.add(makeRow('#66bd63', 'JRC Forest'));
+legendBody.add(makeRow('#f46d43', 'JRC Loss 2021-2025'));
+legendBody.add(sectionLabel('RADD RADAR ALERTS (Sentinel-1)'));
+legendBody.add(sectionLabel('GLAD -S ALERTS 2025 ONLY'));
+legendBody.add(makeRow('#8B0000', 'GLAD -S ALERTS'));
+legendBody.add(makeRow('#fdae61', 'RADD All confidence'));
+legendBody.add(makeRow('#f46d43', 'RADD High conf only'));
+
+legendBody.add(sectionLabel('UPLOADED PLOTS'));
+legendBody.add(makeRow('#0288d1', 'Plot boundaries'));
+
+legend.add(legendBody);
+Map.add(legend);
+
+// ============================================================
+// SECTION 6: LOGIC - Upload, Clear, Click Inspector + Alert
+// ============================================================
+
+var uploadedPolygonsLayer = null;
+var uploadedFeatures      = [];
+
+var sampleGeoJSON = '{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"ProductionPlace":"PLOT-001","Area":0.81},"geometry":{"type":"Polygon","coordinates":[[[104.0,-1.0],[104.01,-1.0],[104.01,-1.01],[104.0,-1.01],[104.0,-1.0]]]}}]}';
+
+var updateStatus = function(msg, color) {
+  statusPanel.clear();
+  statusPanel.add(ui.Label(msg, { fontSize: '10px', color: color || '#546e7a', margin: '0' }));
+};
+//map on click
+var pointInPolygon = function(pt, geom) {
+  var x = pt[0], y = pt[1];
+  var coords = geom.coordinates[0];
+  var inside = false;
+  for (var i = 0, j = coords.length - 1; i < coords.length; j = i++) {
+    var xi = coords[i][0], yi = coords[i][1];
+    var xj = coords[j][0], yj = coords[j][1];
+    if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) inside = !inside;
+  }
+  return inside;
+};
+
+var computeAlert = function(eeGeom, callback) {
+  var combined = ee.Image.cat([
+    glad_alerts.rename('glad_s2'),
+    loss_jrc.rename('jrc_loss'),
+    radd_all_conf.rename('radd')
+  ]);
+
+  var result = combined.reduceRegion({
+    reducer: ee.Reducer.max(),
+    geometry: eeGeom,
+    scale: 30,
+    maxPixels: 1e6
+  });
+
+  result.evaluate(function(val, err) {
+    if (err) { callback('ERROR', []); return; }
+
+    var hasGLAD = (val.glad_s2  !== null && val.glad_s2  > 0);
+    var hasJRC  = (val.jrc_loss !== null && val.jrc_loss > 0);
+    var hasRADD = (val.radd     !== null && val.radd     > 0);
+
+    var sensorCount = (hasGLAD ? 1 : 0)
+                    + (hasJRC  ? 1 : 0)
+                    + (hasRADD ? 1 : 0);
+
+    var level;
+    if      (sensorCount === 3) level = 'HIGH';
+    else if (sensorCount === 2) level = 'MEDIUM';
+    else if (sensorCount === 1) level = 'LOW';
+    else                        level = 'NO ALERT';
+
+    var triggered = [
+      hasGLAD ? 'GLAD-S2' : null,
+      hasJRC  ? 'JRC'     : null,
+      hasRADD ? 'RADD'    : null
+    ].filter(function(x) { return x !== null; });
+
+    callback(level, triggered);
+  });
+};
+
+var showPopup = function(props, eeGeom) {
+  popupBody.clear();
+  var makeRow2 = function(label, val) {
+    popupBody.add(ui.Panel({
+      widgets: [
+        ui.Label(label, { fontSize: '9px', color: '#90a4ae', margin: '2px 0 0 0', width: '95px' }),
+        ui.Label(String(val !== undefined && val !== null ? val : 'N/A'), {
+          fontSize: '11px', color: '#1b2631', fontWeight: 'bold', margin: '2px 0 0 0'
+        })
+      ],
+      layout: ui.Panel.Layout.flow('horizontal')
+    }));
+  };
+  makeRow2('Production Place', props.ProductionPlace);
+  makeRow2('Area (ha)',        props.Area);
+
+  var alertLabel = ui.Label('Computing alert...', {
+    fontSize: '11px', color: '#546e7a', fontWeight: 'bold', margin: '8px 0 0 0'
+  });
+  var triggeredLabel = ui.Label('', {
+    fontSize: '9px', color: '#546e7a', margin: '2px 0 0 0'
+  });
+  popupBody.add(alertLabel);
+  popupBody.add(triggeredLabel);
+  popupPanel.style().set('shown', true);
+
+  // callback(level, triggered)
+  computeAlert(eeGeom, function(level, triggered) {
+    //  HIGH/MEDIUM/LOW/NO ALERT
+    var alertColor = '#546e7a';
+    if      (level === 'HIGH')     alertColor = '#b71c1c';
+    else if (level === 'MEDIUM')   alertColor = '#e65100';
+    else if (level === 'LOW')      alertColor = '#f9a825';
+    else if (level === 'NO ALERT') alertColor = '#2e7d32';
+
+    alertLabel.setValue('Alert: ' + level);
+    alertLabel.style().set('color', alertColor);
+    triggeredLabel.setValue(
+      triggered.length > 0 ? 'Triggered: ' + triggered.join(', ') : 'No sensor triggered'
+    );
+  });
+};
+
+var clearPolygons = function() {
+  if (uploadedPolygonsLayer) { Map.remove(uploadedPolygonsLayer); uploadedPolygonsLayer = null; }
+  uploadedFeatures = [];
+  popupPanel.style().set('shown', false);
+  updateStatus('Cleared. Ready for new input.');
+  Map.centerObject(ee.Geometry.Rectangle([95, -11, 141, 6]), 17);
+};
+
+var displayPolygons = function() {
+  var text = geojsonTextbox.getValue();
+  if (!text || text.trim() === '') {
+    updateStatus('Please paste GeoJSON first.', '#e65100');
+    return;
+  }
+  try {
+    var data = JSON.parse(text);
+    clearPolygons();
+    if (data.type !== 'FeatureCollection' || !data.features || data.features.length === 0) {
+      throw new Error('Not a valid FeatureCollection.');
+    }
+    var features = data.features;
+    updateStatus('Loading ' + features.length + ' plots...', '#1565c0');
+    var eeFeatures = [];
+    uploadedFeatures = [];
+    for (var i = 0; i < features.length; i++) {
+      var f    = features[i];
+      var geom = ee.Geometry(f.geometry);
+      var props = f.properties || {};
+      eeFeatures.push(ee.Feature(geom, props));
+      uploadedFeatures.push({ geometry: f.geometry, properties: props, eeGeom: geom });
+    }
+    var fc = ee.FeatureCollection(eeFeatures);
+    uploadedPolygonsLayer = ui.Map.Layer(fc, {
+      color: '#0288d1', fillColor: '4fc3f730', width: 2
+    }, 'Uploaded Plots (' + features.length + ')');
+    Map.add(uploadedPolygonsLayer);
+    Map.centerObject(fc, 12);
+    updateStatus(features.length + ' plots loaded. Click to inspect.', '#2e7d32');
+  } catch (e) {
+    updateStatus('Parse error: ' + e.message, '#b71c1c');
+  }
+};
+
+uploadBtn.onClick(displayPolygons);
+sampleBtn.onClick(function() {
+  geojsonTextbox.setValue(sampleGeoJSON);
+  updateStatus('Sample loaded - click Load to display.', '#1565c0');
+});
+clearBtn.onClick(clearPolygons);
+
+Map.onClick(function(coords) {
+  for (var i = 0; i < uploadedFeatures.length; i++) {
+    if (uploadedFeatures[i].geometry &&
+        pointInPolygon([coords.lon, coords.lat], uploadedFeatures[i].geometry)) {
+      showPopup(uploadedFeatures[i].properties, uploadedFeatures[i].eeGeom);
+      return;
+    }
+  }
+});   
+// ============================================================
+// SECTION 7: DEFAULT VIEW
+// ============================================================
+
+Map.centerObject(ee.Geometry.Rectangle([95, -11, 141, 6]), 5);
+
+print('=== Multi-Sensor Deforestation Monitor ===');
+print('Optical: Hansen GFC + GLAD Alerts (Landsat/S2)');
+print('Radar:   RADD Alerts (Sentinel-1 SAR | Wageningen University)');
+print('Baseline: Dec 31, 2020 | Area: Humid Tropical Forests');
+print('');
+print('Usage:');
+print('1. Paste GeoJSON in sidebar > Load');
+print('2. Select forest layer (SBTN/GFW/JRC) and RADD confidence');
+print('3. Click polygon > see plot info + alert level');
+print('4. Alert logic: both forest loss + RADD = HIGH ALERT, one only = MEDIUM, neither = NO ALERT');

@@ -115,7 +115,7 @@ All values are reported in tonnes of CO2-equivalent (tCO2e) and aggregated per y
 
 ---
 
-### DEFORESTATION MULTISENSOR ALERTS
+### def_alert_multisensor
 A near real-time deforestation monitoring tool for Indonesia that fuses multiple satellite sensors — optical and radar — to detect and flag deforestation alerts after the EUDR baseline date of December 31, 2020. Users can upload their own plantation plot boundaries (GeoJSON) and instantly see whether the plot overlaps with forest loss alerts, and whether the plot falls inside a protected forest area according to KLHK data.
 
 **App:** https://ee-gitanisa.projects.earthengine.app/view/multisensor-deforestation-alert

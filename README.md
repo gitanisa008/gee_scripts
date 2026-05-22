@@ -161,7 +161,7 @@ For RADD, alerts are filtered by date offset > 731 days from the RADD epoch (Jan
 - **High confidence only:** RADD confidence ≥ 3
 
 #### 2. Alert Fusion Logic
-For each uploaded plot, all three sensors are queried using `reduceRegion` with `ee.Reducer.max()` at 30 m scale. A sensor is considered triggered if at least one pixel within the plot boundary shows a positive detection.
+For each uploaded plot, all three sensors are queried using `reduceRegion` with `ee.Reducer.max()` at 10 m scale. A sensor is considered triggered if at least one pixel within the plot boundary shows a positive detection.
 
 ```
 alert level = number of triggered sensors

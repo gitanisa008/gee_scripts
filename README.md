@@ -7,6 +7,7 @@ A collection of Google Earth Engine (GEE) scripts for various research projects
 | Script | App Link |
 |--------|----------|
 | luc_ghg | *(https://gitanisa.users.earthengine.app/view/greenhouse-gasses-emission-from-land-use-change)* |
+| def_alert_multisensor | *(https://ee-gitanisa.projects.earthengine.app/view/multisensor-deforestation-alert)* |
 
 ## Scripts
 
@@ -111,4 +112,82 @@ All values are reported in tonnes of CO2-equivalent (tCO2e) and aggregated per y
 ## Notes
 - All scripts are intended to be run in the [GEE Code Editor](https://code.earthengine.google.com/).
 - Scripts may require a registered GEE account with access to the listed datasets.
+
+---
+
+### def_alert_multisensor
+A near real-time deforestation monitoring tool for Indonesia that fuses multiple satellite sensors — optical and radar — to detect and flag deforestation alerts after the EUDR baseline date of December 31, 2020. Users can upload their own plantation plot boundaries (GeoJSON) and instantly see whether the plot overlaps with forest loss alerts, and whether the plot falls inside a protected forest area according to KLHK data.
+
+**App:** https://ee-gitanisa.projects.earthengine.app/view/multisensor-deforestation-alert
+
+**Features:**
+- Multi-sensor alert fusion: JRC TMF, GLAD-S2, and RADD (Sentinel-1 SAR)
+- Alert confidence levels: HIGH (3 sensors), MEDIUM (2 sensors), LOW (1 sensor)
+- Adjustable RADD confidence filter: all alerts or high confidence only
+- Upload plot boundaries via GeoJSON paste — supports multiple plots
+- GeoJSON validation against EUDR geometric standards:
+  - Closed ring check
+  - Exterior ring winding order (must be Counter-Clockwise)
+  - Interior ring (hole) winding order (must be Clockwise)
+  - Self-intersection detection
+  - Coordinate precision (minimum 6 decimal places)
+- KLHK forest status overlay — flags plots inside protected/restricted areas
+- Geodesic area calculation per plot (in hectares, 2 decimal places)
+- Interactive popup per plot showing alert level, triggered sensors, KLHK status, and forest type
+
+**Datasets:**
+- Forest baseline (2020): `JRC/GFC2020/V3`
+- Deforestation 2021–2025: `projects/JRC/TMF/v1_2025/DeforestationYear`
+- GLAD optical alerts (Landsat/Sentinel-2): `projects/glad/alert/UpdResult`
+- RADD radar alerts (Sentinel-1 SAR): `projects/radar-wur/raddalert/v1`
+- Administrative boundary: `FAO/GAUL/2015/level1`
+- KLHK forest status (Indonesia): `projects/ee-gitanisa/assets/klhk` *(private asset, shared publicly via GEE)*
+
+### Methodology
+
+#### 1. Forest Loss Detection
+Three independent sensors are used to detect post-2020 deforestation, each with different detection mechanisms:
+
+| Sensor | Type | Dataset | Detection basis |
+|--------|------|---------|------------------|
+| JRC TMF | Optical | `projects/JRC/TMF/v1_2025/DeforestationYear` | Annual deforestation year maps derived from Landsat time series |
+| GLAD-S2 | Optical | `projects/glad/alert/UpdResult` | Near real-time change detection from Landsat + Sentinel-2 |
+| RADD | SAR (Radar) | `projects/radar-wur/raddalert/v1` | Sentinel-1 backscatter change, cloud-penetrating |
+
+All sensors are filtered to post-2020 signals only (aligned with EUDR December 31, 2020 baseline).
+
+For RADD, alerts are filtered by date offset > 731 days from the RADD epoch (January 1, 2019), which corresponds to post-2020 detections. Two confidence tiers are available:
+- **All alerts:** RADD confidence ≥ 2 (low + high)
+- **High confidence only:** RADD confidence ≥ 3
+
+#### 2. Alert Fusion Logic
+For each uploaded plot, all three sensors are queried using `reduceRegion` with `ee.Reducer.max()` at 30 m scale. A sensor is considered triggered if at least one pixel within the plot boundary shows a positive detection.
+
+```
+alert level = number of triggered sensors
+  3 sensors → HIGH
+  2 sensors → MEDIUM
+  1 sensor  → LOW
+  0 sensors → NO ALERT
+```
+
+#### 3. KLHK Overlay Analysis
+Each plot is spatially intersected with the KLHK forest status layer using `filterBounds`. The `keterangan` attribute of intersecting polygons is retrieved and deduplicated. Plot status is classified as:
+- **SAFE** — all intersecting KLHK polygons fall within: Area Penggunaan Lain, Belum Terdefinisi, Hutan Produksi Tetap, or Hutan Produksi Terbatas
+- **PROTECTED** — one or more intersecting polygons fall within other categories (e.g., Hutan Lindung, Hutan Konservasi)
+
+#### 4. GeoJSON Validation (EUDR)
+Validation is performed client-side before any GEE computation, checking:
+- **Closed ring:** first and last coordinate of each ring must be identical
+- **CCW exterior ring:** shoelace formula signed area must be positive
+- **CW interior rings:** signed area of each hole ring must be negative
+- **Self-intersection:** segment-pair intersection test on exterior ring vertices
+- **Coordinate precision:** each vertex coordinate must have ≥ 6 decimal places
+
+### References
+- Turubanova, S. et al. (2018). Ongoing primary forest loss in Brazil, Democratic Republic of the Congo, and Indonesia. *Environmental Research Letters.*
+- Reiche, J. et al. (2021). Forest disturbance alerts for the Congo Basin using Sentinel-1. *Environmental Research Letters.* *(RADD Alert)*
+- Hansen, M.C. et al. (2013). High-resolution global maps of 21st-century forest cover change. *Science.*
+- European Commission (2023). *Regulation (EU) 2023/1115 on deforestation-free products (EUDR).*
+- KLHK (Kementerian Lingkungan Hidup dan Kehutanan). Forest Area Status Map of Indonesia.
 

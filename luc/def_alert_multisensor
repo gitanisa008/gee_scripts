@@ -399,7 +399,7 @@ var computeAlert = function(eeGeom, callback) {
   var result = combined.reduceRegion({
     reducer: ee.Reducer.max(),
     geometry: eeGeom,
-    scale: 30,
+    scale: 10,  // native resolution of GLAD-S2 & RADD; JRC TMF (30m) is upsampled automatically
     maxPixels: 1e6
   });
 

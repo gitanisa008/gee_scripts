@@ -10,7 +10,13 @@
 // ============================================================
 var idn = ee.FeatureCollection("FAO/GAUL/2015/level1")
   .filter(ee.Filter.eq('ADM0_NAME', 'Indonesia'));
-  
+
+// --- KLHK Forest Status (Indonesian Ministry of Environment) ---
+var klhk = ee.FeatureCollection("projects/ee-gitanisa/assets/klhk");
+var klhkSafeCats    = ['Areal Penggunaan Lain', 'Belum Terdefinisi', 'Hutan Produksi Tetap', 'Hutan Produksi Terbatas'];
+var klhk_safe       = klhk.filter(ee.Filter.inList('keterangan', klhkSafeCats));
+var klhk_restricted = klhk.filter(ee.Filter.inList('keterangan', klhkSafeCats).not());
+
 // --- JRC Global Forest Cover 2020 ---
 var jrc      = ee.Image("JRC/GFC2020/V3");
 var forest_jrc = jrc.gt(0).clip(idn)
@@ -67,11 +73,15 @@ var VIS = {
 // ============================================================
 Map.addLayer(forest_jrc.updateMask(forest_jrc),              VIS.forest_jrc,  'JRC Forest 2020',           true);
 Map.addLayer(loss_jrc.updateMask(loss_jrc.gt(0)), VIS.loss_jrc, 'JRC Deforestation 2021-2025',    true);
-Map.addLayer(glad_alerts.updateMask(glad_alerts.gt(0)), VIS.glad_all, 'GLAD ALERT 2025 ONLY',    true);
+Map.addLayer(glad_alerts.updateMask(glad_alerts.gt(0)), VIS.glad_all, 'GLAD-S ALERT 2025 ONLY',    true);
+Map.addLayer(radd_all_conf, VIS.radd_all, 'RADD  ALL CONFIDENCE',    true);
+Map.addLayer(radd_high_conf, VIS.radd_high, 'RADD HIGH CONFIDENCE',    true);
+
 Map.addLayer(radd_jrc.updateMask(radd_jrc.gt(0)),   VIS.radd_all,  'RADD x JRC LOSS (All confidence)',   false);
-Map.addLayer(radd_glad.updateMask(radd_glad.gt(0)),     VIS.radd_all,  'RADD x GLAD ALERT 2025 (All confidence)',    false);
-Map.addLayer(radd_jrc_high.updateMask(radd_jrc_high.gt(0)),   VIS.radd_all,  'RADD x JRC LOSS (High confidence)',   false);
-Map.addLayer(radd_glad_high.updateMask(radd_glad_high.gt(0)),     VIS.radd_all,  'ADD x GLAD ALERT 2025 (High confidence)',    false);
+Map.addLayer(radd_glad,     VIS.radd_all,  'RADD x GLAD ALERT 2025 (All confidence)',    false);
+Map.addLayer(radd_jrc_high,   VIS.radd_all,  'RADD x JRC LOSS (High confidence)',   false);
+Map.addLayer(radd_glad_high,     VIS.radd_all,  'ADD x GLAD ALERT 2025 (High confidence)',    false);
+Map.addLayer(klhk_restricted, {color: '#e53935'}, 'KLHK - Kawasan Terlindungi', true);
 
 // ============================================================
 // SECTION 5: UI
@@ -231,13 +241,16 @@ legendBody.add(sectionLabel('FOREST BASELINE 2020'));
 legendBody.add(makeRow('#66bd63', 'JRC Forest'));
 legendBody.add(makeRow('#f46d43', 'JRC Loss 2021-2025'));
 legendBody.add(sectionLabel('RADD RADAR ALERTS (Sentinel-1)'));
-legendBody.add(sectionLabel('GLAD -S ALERTS 2025 ONLY'));
-legendBody.add(makeRow('#8B0000', 'GLAD -S ALERTS'));
 legendBody.add(makeRow('#fdae61', 'RADD All confidence'));
 legendBody.add(makeRow('#f46d43', 'RADD High conf only'));
+legendBody.add(sectionLabel('GLAD -S ALERTS 2025 ONLY'));
+legendBody.add(makeRow('#8B0000', 'GLAD -S ALERTS'));
+
 
 legendBody.add(sectionLabel('UPLOADED PLOTS'));
 legendBody.add(makeRow('#0288d1', 'Plot boundaries'));
+legendBody.add(sectionLabel('KLHK FOREST STATUS'));
+legendBody.add(makeRow('#e53935', 'Kawasan Terlindungi'));
 
 legend.add(legendBody);
 Map.add(legend);
@@ -246,10 +259,114 @@ Map.add(legend);
 // SECTION 6: LOGIC - Upload, Clear, Click Inspector + Alert
 // ============================================================
 
+// --- GeoJSON Validation Helpers (EUDR standard) ---
+var calcSignedArea = function(ring) {
+  var area = 0;
+  for (var i = 0; i < ring.length - 1; i++) {
+    area += (ring[i][0] * ring[i+1][1]) - (ring[i+1][0] * ring[i][1]);
+  }
+  return area / 2;
+};
+
+var segDirection = function(pi, pj, pk) {
+  return (pk[0] - pi[0]) * (pj[1] - pi[1]) - (pj[0] - pi[0]) * (pk[1] - pi[1]);
+};
+
+var segmentsIntersect = function(a, b, c, d) {
+  var d1 = segDirection(c, d, a), d2 = segDirection(c, d, b);
+  var d3 = segDirection(a, b, c), d4 = segDirection(a, b, d);
+  return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+         ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
+};
+
+var hasSelfIntersect = function(ring) {
+  var n = ring.length - 1;
+  for (var i = 0; i < n - 1; i++) {
+    for (var j = i + 2; j < n; j++) {
+      if (i === 0 && j === n - 1) continue;
+      if (segmentsIntersect(ring[i], ring[i+1], ring[j], ring[j+1])) return true;
+    }
+  }
+  return false;
+};
+
+var validateGeoJSON = function(features) {
+  var errors = [];
+  for (var i = 0; i < features.length; i++) {
+    var f    = features[i];
+    var name = (f.properties &&
+                (f.properties.ProductionPlace || f.properties.name || f.properties.id)) ||
+               ('Feature ' + (i + 1));
+    var geom = f.geometry;
+    if (!geom || geom.type !== 'Polygon') continue;
+
+    var rings = geom.coordinates;
+    var ext   = rings[0];
+
+    // 1. Closed loop check
+    var first = ext[0], last = ext[ext.length - 1];
+    if (first[0] !== last[0] || first[1] !== last[1]) {
+      errors.push(name + ': exterior ring not closed');
+    }
+
+    // 2. Exterior ring must be CCW
+    if (calcSignedArea(ext) < 0) {
+      errors.push(name + ': exterior ring is CW (must be CCW per GeoJSON/EUDR)');
+    }
+
+    // 3. Interior rings (holes) must be CW
+    for (var h = 1; h < rings.length; h++) {
+      if (calcSignedArea(rings[h]) > 0) {
+        errors.push(name + ': interior ring ' + h + ' is CCW (holes must be CW per EUDR)');
+      }
+    }
+
+    // 4. Self-intersect check
+    if (hasSelfIntersect(ext)) {
+      errors.push(name + ': self-intersecting ring');
+    }
+
+    // 5. Coordinate precision: minimum 6 decimal digits (EUDR)
+    var lowPrec = false;
+    for (var p = 0; p < ext.length && !lowPrec; p++) {
+      var lonStr = String(ext[p][0]), latStr = String(ext[p][1]);
+      var lonDec = lonStr.indexOf('.') >= 0 ? lonStr.split('.')[1].length : 0;
+      var latDec = latStr.indexOf('.') >= 0 ? latStr.split('.')[1].length : 0;
+      if (lonDec < 6 || latDec < 6) lowPrec = true;
+    }
+    if (lowPrec) {
+      errors.push(name + ': coordinates must have \u2265 6 decimal places (EUDR precision)');
+    }
+  }
+  return errors;
+};
+
+// --- KLHK Overlay Analysis ---
+var computeKLHK = function(eeGeom, callback) {
+  var intersecting   = klhk.filterBounds(eeGeom);
+  var keteranganList = intersecting.aggregate_array('keterangan');
+  keteranganList.evaluate(function(vals, err) {
+    if (err || !vals || vals.length === 0) { callback('Unknown', []); return; }
+    var unique = [], seen = {};
+    for (var i = 0; i < vals.length; i++) {
+      if (!seen[vals[i]]) { seen[vals[i]] = true; unique.push(vals[i]); }
+    }
+    var safeOnly = true;
+    for (var j = 0; j < unique.length; j++) {
+      var isSafeType = false;
+      for (var k = 0; k < klhkSafeCats.length; k++) {
+        if (unique[j] === klhkSafeCats[k]) { isSafeType = true; break; }
+      }
+      if (!isSafeType) { safeOnly = false; break; }
+    }
+    callback(safeOnly ? 'SAFE' : 'PROTECTED', unique);
+  });
+};
+
 var uploadedPolygonsLayer = null;
 var uploadedFeatures      = [];
 
-var sampleGeoJSON = '{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"ProductionPlace":"PLOT-001","Area":0.81},"geometry":{"type":"Polygon","coordinates":[[[104.0,-1.0],[104.01,-1.0],[104.01,-1.01],[104.0,-1.01],[104.0,-1.0]]]}}]}';
+var sampleGeoJSON = '{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"ProductionPlace":"PLOT-001","Area":1.23},"geometry":{"type":"Polygon","coordinates":[[[104.052631,-1.052631],[104.052631,-1.062741],[104.062741,-1.062741],[104.062741,-1.052631],[104.052631,-1.052631]]]}}]}';
 
 var updateStatus = function(msg, color) {
   statusPanel.clear();
@@ -269,10 +386,14 @@ var pointInPolygon = function(pt, geom) {
 };
 
 var computeAlert = function(eeGeom, callback) {
+  var useRadd = confSelect.getValue() === 'High confidence only'
+    ? radd_high_conf
+    : radd_all_conf;
+
   var combined = ee.Image.cat([
     glad_alerts.rename('glad_s2'),
     loss_jrc.rename('jrc_loss'),
-    radd_all_conf.rename('radd')
+    useRadd.rename('radd')
   ]);
 
   var result = combined.reduceRegion({
@@ -296,7 +417,7 @@ var computeAlert = function(eeGeom, callback) {
     var level;
     if      (sensorCount === 3) level = 'HIGH';
     else if (sensorCount === 2) level = 'MEDIUM';
-    else if (sensorCount === 1) level = 'LOW';
+    else if (sensorCount === 1) level = 'MEDIUM';
     else                        level = 'NO ALERT';
 
     var triggered = [
@@ -323,7 +444,19 @@ var showPopup = function(props, eeGeom) {
     }));
   };
   makeRow2('Production Place', props.ProductionPlace);
-  makeRow2('Area (ha)',        props.Area);
+  var areaValLabel = ui.Label('Computing...', {
+    fontSize: '11px', color: '#1b2631', fontWeight: 'bold', margin: '2px 0 0 0'
+  });
+  popupBody.add(ui.Panel({
+    widgets: [
+      ui.Label('Area (ha)', { fontSize: '9px', color: '#90a4ae', margin: '2px 0 0 0', width: '95px' }),
+      areaValLabel
+    ],
+    layout: ui.Panel.Layout.flow('horizontal')
+  }));
+  eeGeom.area({ maxError: 0.001 }).divide(10000).evaluate(function(ha, err) {
+    areaValLabel.setValue(err ? 'N/A' : (Math.round(ha * 100) / 100).toFixed(2));
+  });
 
   var alertLabel = ui.Label('Computing alert...', {
     fontSize: '11px', color: '#546e7a', fontWeight: 'bold', margin: '8px 0 0 0'
@@ -331,8 +464,16 @@ var showPopup = function(props, eeGeom) {
   var triggeredLabel = ui.Label('', {
     fontSize: '9px', color: '#546e7a', margin: '2px 0 0 0'
   });
+  var klhkStatusLabel = ui.Label('KLHK: Computing...', {
+    fontSize: '11px', color: '#546e7a', fontWeight: 'bold', margin: '6px 0 0 0'
+  });
+  var klhkTypeLabel = ui.Label('', {
+    fontSize: '9px', color: '#546e7a', margin: '2px 0 4px 0'
+  });
   popupBody.add(alertLabel);
   popupBody.add(triggeredLabel);
+  popupBody.add(klhkStatusLabel);
+  popupBody.add(klhkTypeLabel);
   popupPanel.style().set('shown', true);
 
   // callback(level, triggered)
@@ -350,14 +491,25 @@ var showPopup = function(props, eeGeom) {
       triggered.length > 0 ? 'Triggered: ' + triggered.join(', ') : 'No sensor triggered'
     );
   });
+
+  computeKLHK(eeGeom, function(status, types) {
+    var klhkColor = status === 'SAFE'    ? '#2e7d32' :
+                   status === 'Unknown' ? '#546e7a' : '#b71c1c';
+    klhkStatusLabel.setValue('KLHK: ' + status);
+    klhkStatusLabel.style().set('color', klhkColor);
+    klhkTypeLabel.setValue(
+      types.length > 0 ? types.join(', ') : 'No KLHK data'
+    );
+  });
 };
 
 var clearPolygons = function() {
-  if (uploadedPolygonsLayer) { Map.remove(uploadedPolygonsLayer); uploadedPolygonsLayer = null; }
+  if (uploadedPolygonsLayer) { Map.layers().remove(uploadedPolygonsLayer); uploadedPolygonsLayer = null; }
   uploadedFeatures = [];
+  geojsonTextbox.setValue('');
   popupPanel.style().set('shown', false);
   updateStatus('Cleared. Ready for new input.');
-  Map.centerObject(ee.Geometry.Rectangle([95, -11, 141, 6]), 17);
+  Map.centerObject(ee.Geometry.Rectangle([95, -11, 141, 6]), 5);
 };
 
 var displayPolygons = function() {
@@ -373,6 +525,7 @@ var displayPolygons = function() {
       throw new Error('Not a valid FeatureCollection.');
     }
     var features = data.features;
+    var geoErrors = validateGeoJSON(features);
     updateStatus('Loading ' + features.length + ' plots...', '#1565c0');
     var eeFeatures = [];
     uploadedFeatures = [];
@@ -389,7 +542,12 @@ var displayPolygons = function() {
     }, 'Uploaded Plots (' + features.length + ')');
     Map.add(uploadedPolygonsLayer);
     Map.centerObject(fc, 12);
-    updateStatus(features.length + ' plots loaded. Click to inspect.', '#2e7d32');
+    if (geoErrors.length > 0) {
+      updateStatus('GeoJSON invalid — ' + geoErrors[0] +
+        (geoErrors.length > 1 ? ' (+' + (geoErrors.length - 1) + ' more issue(s))' : ''), '#b71c1c');
+    } else {
+      updateStatus(features.length + ' plots loaded. GeoJSON valid ✓', '#2e7d32');
+    }
   } catch (e) {
     updateStatus('Parse error: ' + e.message, '#b71c1c');
   }
